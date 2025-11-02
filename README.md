@@ -75,7 +75,7 @@ As a developer, I found myself constantly re-searching for the same code snippet
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/code-cache.git
+   git clone https://github.com/kenduraghav/code-cache.git
    cd code-cache
    ```
 
