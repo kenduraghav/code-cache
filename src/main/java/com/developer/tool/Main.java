@@ -48,7 +48,7 @@ public class Main {
 				return;
 			}
 
-			if (snippets.size() >= 4) { // Max 500 snippets
+			if (snippets.size() >= 100) { // Max 500 snippets
 				ctx.status(429).result("Storage limit reached");
 				return;
 			}
