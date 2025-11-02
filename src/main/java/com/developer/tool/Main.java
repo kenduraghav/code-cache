@@ -18,8 +18,10 @@ public class Main {
 
 	public static void main(String[] args) {
 
-		Javalin app = Javalin.create().start(7000);
-		
+		int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "7000"));
+
+		Javalin app = Javalin.create().start(port);
+
 		app.before(ctx -> {
 			ctx.contentType("text/html");
 		});
@@ -53,27 +55,26 @@ public class Main {
 		app.get("/snippets", ctx -> {
 			ctx.result(renderSnippetsHtml(snippets));
 		});
-		
-		
+
 		app.get("/snippets/search", ctx -> {
 			String query = ctx.queryParam("search");
 			List<Snippet> filtered = snippets.stream()
-			        .filter(s -> query == null || query.isEmpty() || 
-			                     s.getDescription().toLowerCase().contains(query.toLowerCase()) ||
-			                     s.getCode().toLowerCase().contains(query.toLowerCase()))
-			        .toList();
+					.filter(s -> query == null || query.isEmpty()
+							|| s.getDescription().toLowerCase().contains(query.toLowerCase())
+							|| s.getCode().toLowerCase().contains(query.toLowerCase()))
+					.toList();
 			ctx.result(renderSnippetsHtml(filtered));
-			
+
 		});
-		
+
 		app.delete("/snippets/{id}", ctx -> {
 			String id = ctx.pathParam("id");
-			
+
 			snippets = snippets.stream().filter(s -> !s.getId().equals(id)).toList();
 			ctx.status(200);
 			ctx.result("");
 		});
-		
+
 	}
 
 	private static String getHtmlPage() {
@@ -90,7 +91,7 @@ public class Main {
 
 				    <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-java.min.js"></script>
 				    <!-- Add other Prism language components as needed -->
-				  
+
 				    <style>
 				    	body{font-family:Arial,sans-serif;margin:30px}
 				    	textarea{width:400px;height:100px}
@@ -105,7 +106,8 @@ public class Main {
 
 				</head>
 				<body>
-				    <h1>CodeCache - Add Snippet</h1>
+				    <h1>CodeCache - Snippet Store</h1>
+				    <h2>Add Snippets</h2>
 				    <form hx-post="/snippets" hx-target="#snippets" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful) this.reset()">
 				        <textarea name="code" placeholder="Code" required></textarea><br />
 				        <input name="language" placeholder="Language (e.g. java)" required /><br />
@@ -113,21 +115,21 @@ public class Main {
 				        <input name="tags" placeholder="Tags (comma separated)" /><br />
 				        <button type="submit">Add Snippet</button>
 				    </form>
-				    
+
 				     <h2>Search Snippets</h2>
 				     <div id="search-snips">
-				     	<input type="text" name="search" 
-					       hx-get="/snippets/search" 
-					       hx-trigger="keyup changed delay:300ms" 
+				     	<input type="text" name="search"
+					       hx-get="/snippets/search"
+					       hx-trigger="keyup changed delay:300ms"
 					       hx-target="#snippets"
 					       placeholder="Search snippets..." />
 				     </div>
-				     
+
 				    <h2>Snippets List</h2>
 				    <div id="snippets" hx-get="/snippets" hx-trigger="load"></div>
-					
+
 				    <script>
-				    
+
 				    function copyCode(button){
 					  const code = button.nextElementSibling.innerText;
 					  navigator.clipboard.writeText(code);
@@ -147,42 +149,30 @@ public class Main {
 
 	// Render current snippets list as HTML for snippet container replacement
 	private static String renderSnippetsHtml(List<Snippet> result) {
-	    StringBuilder html = new StringBuilder();
-	    for (Snippet s : result) {
-	        String languageRaw = s.getLanguage() != null ? s.getLanguage() : "text";
-	        String language = escapeHtml(languageRaw.toLowerCase());
+		StringBuilder html = new StringBuilder();
+		for (Snippet s : result) {
+			String languageRaw = s.getLanguage() != null ? s.getLanguage() : "text";
+			String language = escapeHtml(languageRaw.toLowerCase());
 
-	        List<String> tags = s.getTags() != null ? s.getTags() : Collections.<String>emptyList();
-	        String tagsJoined = String.join(", ", tags);
+			List<String> tags = s.getTags() != null ? s.getTags() : Collections.<String>emptyList();
+			String tagsJoined = String.join(", ", tags);
 
-	        html.append("<div class=\"snippet\">")
-	            .append("<div><strong>Description:</strong> ")
-	            .append(escapeHtml(s.getDescription() != null ? s.getDescription() : ""))
-	            .append("</div>")
-	            .append("<div><strong>Language:</strong> ")
-	            .append(escapeHtml(languageRaw))
-	            .append("</div>")
-	            .append("<div><strong>Tags:</strong> ")
-	            .append(escapeHtml(tagsJoined))
-	            .append("</div>")
-	            .append("<div class=\"code-block\">")
-	            .append("<button class=\"copy-btn\" onclick=\"copyCode(this)\">Copy</button>")
-	            .append("<pre><code class=\"language-")
-	            .append(language)
-	            .append("\">")
-	            .append(escapeHtml(s.getCode() != null ? s.getCode() : ""))
-	            .append("</code></pre>")
-	            .append("</div>") // end code-block
-	            .append("<button hx-delete='/snippets/")
-	            .append(s.getId())
-	            .append("' hx-target='closest .snippet' hx-swap='outerHTML'>")
-	            .append("Delete")
-	            .append("</button>")
-	            .append("</div>"); // end snippet
-	    }
-	    return html.toString();
+			html.append("<div class=\"snippet\">").append("<div><strong>Description:</strong> ")
+					.append(escapeHtml(s.getDescription() != null ? s.getDescription() : "")).append("</div>")
+					.append("<div><strong>Language:</strong> ").append(escapeHtml(languageRaw)).append("</div>")
+					.append("<div><strong>Tags:</strong> ").append(escapeHtml(tagsJoined)).append("</div>")
+					.append("<div class=\"code-block\">")
+					.append("<button class=\"copy-btn\" onclick=\"copyCode(this)\">Copy</button>")
+					.append("<pre><code class=\"language-").append(language).append("\">")
+					.append(escapeHtml(s.getCode() != null ? s.getCode() : "")).append("</code></pre>").append("</div>") // end
+																															// code-block
+					.append("<button hx-delete='/snippets/").append(s.getId())
+					.append("' hx-target='closest .snippet' hx-swap='outerHTML'>").append("Delete").append("</button>")
+					.append("</div>"); // end snippet
+		}
+		return html.toString();
 	}
-	
+
 	// Simple HTML escape utility to prevent injection issues
 	private static String escapeHtml(String s) {
 		if (s == null)
@@ -200,7 +190,7 @@ public class Main {
 class Snippet {
 
 	private String id;
-	private String title; 
+	private String title;
 	private String code;
 	private String language;
 	private String description;
