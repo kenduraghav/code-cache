@@ -34,11 +34,31 @@ public class Main {
 
 		// Add snippet (from form submission via htmx)
 		app.post("/snippets", ctx -> {
+
+			String code = ctx.formParam("code");
+			String description = ctx.formParam("description");
+
+			if (code == null || code.trim().isEmpty()) {
+				ctx.status(400).result("Code cannot be empty");
+				return;
+			}
+
+			if (code.length() > 10000) { // 50KB limit
+				ctx.status(400).result("Code too large");
+				return;
+			}
+
+			if (snippets.size() >= 4) { // Max 500 snippets
+				ctx.status(429).result("Storage limit reached");
+				return;
+			}
+
 			Snippet snippet = new Snippet();
 			snippet.setId(UUID.randomUUID().toString());
-			snippet.setCode(ctx.formParam("code"));
+
+			snippet.setCode(code);
 			snippet.setLanguage(ctx.formParam("language"));
-			snippet.setDescription(ctx.formParam("description"));
+			snippet.setDescription(description);
 			String tagsParam = ctx.formParam("tags");
 			if (tagsParam != null && !tagsParam.isEmpty()) {
 				snippet.setTags(List.of(tagsParam.split(",\\s*")));
@@ -108,14 +128,16 @@ public class Main {
 				<body>
 				    <h1>CodeCache - Snippet Store</h1>
 				    <h2>Add Snippets</h2>
-				    <form hx-post="/snippets" hx-target="#snippets" hx-swap="innerHTML" hx-on::after-request="if(event.detail.successful) this.reset()">
+				    <form hx-post="/snippets" id="myForm" hx-target="#snippets" hx-swap="innerHTML">
 				        <textarea name="code" placeholder="Code" required></textarea><br />
 				        <input name="language" placeholder="Language (e.g. java)" required /><br />
 				        <input name="description" placeholder="Description" /><br />
 				        <input name="tags" placeholder="Tags (comma separated)" /><br />
 				        <button type="submit">Add Snippet</button>
+				       	<button type="button" id="cancelBtn">Cancel</button>
+				        <div class='error-msg' style='color: red; margin-top: 10px;'></div>
 				    </form>
-
+				    
 				     <h2>Search Snippets</h2>
 				     <div id="search-snips">
 				     	<input type="text" name="search"
@@ -129,6 +151,26 @@ public class Main {
 				    <div id="snippets" hx-get="/snippets" hx-trigger="load"></div>
 
 				    <script>
+				    
+				    document.getElementById('cancelBtn').addEventListener('click', function() {
+					    const form = document.getElementById('myForm');
+					    form.reset();
+					    // Clear error messages as well
+					    const errContainer = form.querySelector('.error-msg');
+					    if (errContainer) errContainer.textContent = '';
+				    });
+				    
+				    document.getElementById('myForm').addEventListener('htmx:afterRequest', function(event) {
+					    const form = event.target;
+					    const errContainer = form.querySelector('.error-msg');
+					    const status = event.detail.xhr.status;
+					    if (status === 400 || status === 429 || status !== 200) {
+					      if(errContainer) errContainer.textContent = 'Error: ' + status + ' - ' + event.detail.xhr.responseText;
+					    } else {
+					      if(errContainer) errContainer.textContent = '';
+					      form.reset();
+					    }
+					});
 
 				    function copyCode(button){
 					  const code = button.nextElementSibling.innerText;
