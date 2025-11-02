@@ -2,6 +2,7 @@ package com.developer.tool;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -61,7 +62,7 @@ public class Main {
 			snippet.setDescription(description);
 			String tagsParam = ctx.formParam("tags");
 			if (tagsParam != null && !tagsParam.isEmpty()) {
-				snippet.setTags(List.of(tagsParam.split(",\\s*")));
+				snippet.setTags(new ArrayList<>(Arrays.asList(tagsParam.split(",\\s*"))));
 			} else {
 				snippet.setTags(new ArrayList<>());
 			}
@@ -89,8 +90,7 @@ public class Main {
 
 		app.delete("/snippets/{id}", ctx -> {
 			String id = ctx.pathParam("id");
-
-			snippets = snippets.stream().filter(s -> !s.getId().equals(id)).toList();
+			snippets.removeIf(s -> s.getId().equals(id));
 			ctx.status(200);
 			ctx.result("");
 		});
