@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import io.javalin.Javalin;
@@ -49,7 +50,7 @@ public class Main {
 				return;
 			}
 
-			if (snippets.size() >= 100) { // Max 500 snippets
+			if (snippets.size() >= 100) { // Max 100 snippets
 				ctx.status(429).result("Storage limit reached");
 				return;
 			}
@@ -88,6 +89,83 @@ public class Main {
 
 		});
 
+		app.get("/snippets/{id}", ctx -> {
+			String id = ctx.pathParam("id");
+			Optional<Snippet> optSnippet = snippets.stream().filter(s -> s.getId().equals(id)).findFirst();
+
+			if (optSnippet.isEmpty()) {
+				ctx.status(404).result("Snippet not found");
+				return;
+			}
+
+			Snippet snippet = optSnippet.get();
+
+			String html = """
+					<form id="myForm" hx-put="/snippets/%s" hx-target="#snippets" hx-swap="innerHTML">
+					    <textarea name="code" required>%s</textarea><br />
+					    <input name="language" value="%s" required /><br />
+					    <input name="description" value="%s" /><br />
+					    <input name="tags" value="%s" /><br />
+					    <button type="submit">Update Snippet</button>
+					    <button hx-get="/cancel">Cancel</button>
+					    <div class='error-msg' style='color: red; margin-top: 10px;'></div>
+					</form>
+					""".formatted(id, escapeHtml(snippet.getCode()), escapeHtml(snippet.getLanguage()),
+					escapeHtml(snippet.getDescription() != null ? snippet.getDescription() : ""),
+					String.join(", ", snippet.getTags()));
+
+			ctx.result(html);
+		});
+
+		app.put("/snippets/{id}", ctx -> {
+			String id = ctx.pathParam("id");
+			Optional<Snippet> optSnippet = snippets.stream().filter(s -> s.getId().equals(id)).findFirst();
+
+			if (optSnippet.isEmpty()) {
+				ctx.status(404).result("Snippet not found");
+				return;
+			}
+
+			String code = ctx.formParam("code");
+			String description = ctx.formParam("description");
+
+			Snippet snippet = optSnippet.get();
+			snippet.setCode(code);
+			snippet.setLanguage(ctx.formParam("language"));
+			snippet.setDescription(description);
+			String tagsParam = ctx.formParam("tags");
+			if (tagsParam != null && !tagsParam.isEmpty()) {
+				snippet.setTags(new ArrayList<>(Arrays.asList(tagsParam.split(",\\s*"))));
+			} else {
+				snippet.setTags(new ArrayList<>());
+			}
+			String response = """
+					<div id="snippet-form" hx-swap-oob="true">
+					         %s
+					     </div>
+					     <div id="snippets" hx-get="/snippets" hx-trigger="load">
+					     	%s
+					     </div>
+
+					     """.formatted(getDefaultFormHtml(), renderSnippetsHtml(snippets));
+			// Respond with updated snippet list HTML fragment for htmx swap
+			ctx.result(response);
+		});
+		
+		
+		app.get("/cancel", ctx -> {
+			String response = """
+					<div id="snippet-form" hx-swap-oob="true">
+					         %s
+					     </div>
+					     <div id="snippets" hx-get="/snippets" hx-trigger="load">
+					     	%s
+					     </div>
+
+					     """.formatted(getDefaultFormHtml(), renderSnippetsHtml(snippets));
+			ctx.result(response);
+		});
+
 		app.delete("/snippets/{id}", ctx -> {
 			String id = ctx.pathParam("id");
 			snippets.removeIf(s -> s.getId().equals(id));
@@ -95,6 +173,20 @@ public class Main {
 			ctx.result("");
 		});
 
+	}
+
+	private static String getDefaultFormHtml() {
+		return """
+				 <form hx-post="/snippets" id="myForm" hx-target="#snippets" hx-swap="innerHTML">
+				        <textarea name="code" placeholder="Code" required></textarea><br />
+				        <input name="language" placeholder="Language (e.g. java)" required /><br />
+				        <input name="description" placeholder="Description" /><br />
+				        <input name="tags" placeholder="Tags (comma separated)" /><br />
+				        <button type="submit">Add Snippet</button>
+				       	<button hx-get="/cancel">Cancel</button>
+				        <div class='error-msg' style='color: red; margin-top: 10px;'></div>
+				    </form>
+				""";
 	}
 
 	private static String getHtmlPage() {
@@ -122,22 +214,28 @@ public class Main {
 				    	.copy-btn{position:absolute;top:8px;right:8px;background:rgba(60,60,60,.9);color:#fff;border:0;padding:4px 8px;border-radius:4px;font-size:12px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.4);opacity:.95;z-index:20;transition:background .2s}
 				    	.copy-btn:hover{background:rgba(0,122,204,.95)}
 				    	pre::-webkit-scrollbar{height:8px}
+				    	button { margin-right: 10px; }
 				    </style>
 
 				</head>
 				<body>
 				    <h1>CodeCache - Snippet Store</h1>
 				    <h2>Add Snippets</h2>
+				    <div id="snippet-form">
+
 				    <form hx-post="/snippets" id="myForm" hx-target="#snippets" hx-swap="innerHTML">
 				        <textarea name="code" placeholder="Code" required></textarea><br />
 				        <input name="language" placeholder="Language (e.g. java)" required /><br />
 				        <input name="description" placeholder="Description" /><br />
 				        <input name="tags" placeholder="Tags (comma separated)" /><br />
 				        <button type="submit">Add Snippet</button>
-				       	<button type="button" id="cancelBtn">Cancel</button>
+				        <button hx-get="/cancel">Cancel</button>
 				        <div class='error-msg' style='color: red; margin-top: 10px;'></div>
 				    </form>
-				    
+
+				    </div>
+
+
 				     <h2>Search Snippets</h2>
 				     <div id="search-snips">
 				     	<input type="text" name="search"
@@ -148,18 +246,20 @@ public class Main {
 				     </div>
 
 				    <h2>Snippets List</h2>
-				    <div id="snippets" hx-get="/snippets" hx-trigger="load"></div>
+				    <div id="snippets" hx-get="/snippets" hx-trigger="load">
+				    	<p>No snippets yet. Add your first one above!</p>
+				    </div>
 
 				    <script>
-				    
-				    document.getElementById('cancelBtn').addEventListener('click', function() {
-					    const form = document.getElementById('myForm');
-					    form.reset();
-					    // Clear error messages as well
-					    const errContainer = form.querySelector('.error-msg');
-					    if (errContainer) errContainer.textContent = '';
-				    });
-				    
+
+//				    document.getElementById('cancelBtn').addEventListener('click', function() {
+//					    const form = document.getElementById('myForm');
+//					    form.reset();
+//					    // Clear error messages as well
+//					    const errContainer = form.querySelector('.error-msg');
+//					    if (errContainer) errContainer.textContent = '';
+//				    });
+
 				    document.getElementById('myForm').addEventListener('htmx:afterRequest', function(event) {
 					    const form = event.target;
 					    const errContainer = form.querySelector('.error-msg');
@@ -207,10 +307,13 @@ public class Main {
 					.append("<button class=\"copy-btn\" onclick=\"copyCode(this)\">Copy</button>")
 					.append("<pre><code class=\"language-").append(language).append("\">")
 					.append(escapeHtml(s.getCode() != null ? s.getCode() : "")).append("</code></pre>").append("</div>") // end
-																															// code-block
+																															// code
+																															// block
+					.append("<button hx-get='/snippets/").append(s.getId())
+					.append("' hx-target='#snippet-form' hx-swap='innerHTML'>Edit</button>")
 					.append("<button hx-delete='/snippets/").append(s.getId())
-					.append("' hx-target='closest .snippet' hx-swap='outerHTML'>").append("Delete").append("</button>")
-					.append("</div>"); // end snippet
+					.append("' hx-target='closest .snippet' hx-swap='outerHTML'>Delete</button>").append("</div>"); // end
+																													// snippet
 		}
 		return html.toString();
 	}
