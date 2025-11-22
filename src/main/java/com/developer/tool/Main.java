@@ -15,21 +15,70 @@ import lombok.Setter;
 
 public class Main {
     private static final SnippetDAO snippetDAO = new SnippetDAO();
+    private static final UserDAO userDAO = new UserDAO();
+  
+    
 
     public static void main(String[] args) {
         // Initialize database
         DatabaseManager.initializeDatabase();
         
+        
+        AuthController authController = new AuthController(userDAO);
+       
+        
         int port = Integer.parseInt(System.getenv().getOrDefault("PORT", "7000"));
-        Javalin app = Javalin.create().start(port);
+        Javalin app = Javalin.create(
+        		config -> {
+        			 config.jetty.modifyServletContextHandler(handler -> {
+        		            handler.setSessionHandler(new org.eclipse.jetty.server.session.SessionHandler());
+        		        });
+        		})
+        		.start(port);
 
         app.before(ctx -> ctx.contentType("text/html"));
 
+       
+        
+     // Auth check for protected routes
+        app.before("/snippets*", ctx -> {
+            if (ctx.sessionAttribute("userId") == null && 
+                !ctx.path().equals("/login") && !ctx.path().equals("/register")) {
+                ctx.redirect("/login");
+            }
+        });
+        
         // Serve main page
-        app.get("/", ctx -> ctx.result(getHtmlPage()));
+        app.get("/login", authController::showLogin);
+        app.post("/login", authController::login); // Login handler
+        app.get("/register", authController::registerUserForm);  // Register page
+        app.post("/register", authController::registerUser); // Register handler
 
+        // Logout
+        app.get("/logout", ctx -> {
+            ctx.req().getSession().invalidate();
+            ctx.redirect("/login");
+        });
+        
+        app.get("/", ctx -> {
+            String userId = ctx.sessionAttribute("userId");
+            if (userId == null) {
+                ctx.redirect("/login");
+                return;
+            }
+            User user = userDAO.findByUserId(userId);
+            ctx.result(getHtmlPage(user.username()));
+        });
+        // Get all snippets (for initial load)
+        app.get("/snippets", ctx -> {
+        	String userId = ctx.sessionAttribute("userId");
+        	List<Snippet> snippets = snippetDAO.findByUserId(userId);
+        	ctx.result(renderSnippetsHtml(snippets));	
+        });
+        
         // Create snippet
         app.post("/snippets", ctx -> {
+        	String userId = ctx.sessionAttribute("userId");
             Snippet snippet = new Snippet();
             snippet.setId(UUID.randomUUID().toString());
             snippet.setCode(ctx.formParam("code"));
@@ -43,21 +92,21 @@ public class Main {
                 snippet.setTags(new ArrayList<>());
             }
             
-            snippetDAO.create(snippet);
+            snippetDAO.create(snippet,userId);
             
             // Return updated list + reset form using hx-swap-oob
-            ctx.result(renderSnippetsWithFormReset());
+            ctx.result(renderSnippetsWithFormReset(snippetDAO.findByUserId(userId)));
         });
 
-        // Get all snippets (for initial load)
-        app.get("/snippets", ctx -> ctx.result(renderSnippetsHtml()));
+       
         
         app.get("/snippets/search", ctx -> {
+        	String userId = ctx.sessionAttribute("userId");
             String query = ctx.queryParam("search");
             if (query == null || query.isEmpty()) {
                 ctx.result(renderSnippetsHtml());
             } else {
-                ctx.result(renderSnippetsHtml(snippetDAO.search(query)));
+                ctx.result(renderSnippetsHtml(snippetDAO.search(query,userId)));
             }
         });
 
@@ -79,6 +128,7 @@ public class Main {
 
         // Update snippet
         app.put("/snippets/{id}", ctx -> {
+        	String userId = ctx.sessionAttribute("userId");
             String id = ctx.pathParam("id");
             Snippet snippet = snippetDAO.findById(id);
             
@@ -98,16 +148,17 @@ public class Main {
                 snippet.setTags(new ArrayList<>());
             }
             
-            snippetDAO.update(snippet);
+            snippetDAO.update(snippet,userId);
             
             // Return updated list + reset form using hx-swap-oob
-            ctx.result(renderSnippetsWithFormReset());
+            ctx.result(renderSnippetsWithFormReset(snippetDAO.findByUserId(userId)));
         });
 
         // Delete snippet
         app.delete("/snippets/{id}", ctx -> {
+        	String userId = ctx.sessionAttribute("userId");
             String id = ctx.pathParam("id");
-            snippetDAO.delete(id);
+            snippetDAO.delete(id,userId);
             ctx.status(200).result("");
         });
 
@@ -115,7 +166,7 @@ public class Main {
        
     }
 
-    private static String getHtmlPage() {
+    private static String getHtmlPage(String username) {
         return """
             <!DOCTYPE html>
             <html lang="en">
@@ -140,7 +191,14 @@ public class Main {
                 </style>
             </head>
             <body>
-                <h1>CodeCache - Snippet Manager</h1>
+               
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                 <h1>CodeCache - Snippet Manager</h1>
+		            <div>
+		                <span style="margin-right: 15px;">Hi, %s</span>
+		                <a href="/logout" style="padding: 8px 16px; background: #dc3545; color: white; text-decoration: none; border-radius: 4px;">Logout</a>
+		            </div>
+		        </div>
                 
                 <div id="snippet-form">
                     %s
@@ -175,7 +233,7 @@ public class Main {
                 </script>
             </body>
             </html>
-        """.formatted(getDefaultFormHtml());
+        """.formatted(username,getDefaultFormHtml());
     }
 
     private static String getDefaultFormHtml() {
@@ -210,7 +268,7 @@ public class Main {
         );
     }
 
-    private static String renderSnippetsWithFormReset() {
+    private static String renderSnippetsWithFormReset(List<Snippet> snippets) {
         // Use hx-swap-oob to update both snippets list AND reset form
         return """
             <div id="snippets">
@@ -219,7 +277,7 @@ public class Main {
             <div id="snippet-form" hx-swap-oob="true">
                 %s
             </div>
-        """.formatted(renderSnippetsHtml(), getDefaultFormHtml());
+        """.formatted(renderSnippetsHtml(snippets), getDefaultFormHtml());
     }
 
     private static String renderSnippetsHtml() {
@@ -287,6 +345,7 @@ public class Main {
 class Snippet {
 
 	private String id;
+	private String userId;
 	private String title;
 	private String code;
 	private String language;
